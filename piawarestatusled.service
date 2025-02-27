@@ -1,0 +1,13 @@
+[Unit]
+Description=”Piaware Status LED Daemon"
+After=multi-user.target
+
+[Service]
+Type=idle
+Restart=always
+WorkingDirectory=/home/pi/piawarestatusled
+ExecStart=/usr/bin/python /home/pi/piawarestatusled/piawarestatusled.py
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
