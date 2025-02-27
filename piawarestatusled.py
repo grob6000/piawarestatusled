@@ -2,6 +2,16 @@ import requests
 import time
 from rpi_ws281x import PixelStrip, Color
 import sys
+import signal
+
+class KillMe:
+  kill_now = False
+  def __init__(self):
+    signal.signal(signal.SIGINT, self.exit_gracefully)
+    signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+  def exit_gracefully(self, signum, frame):
+    self.kill_now = True
 
 # stderr print
 def eprint(*args, **kwargs):
@@ -33,7 +43,9 @@ if __name__ == "__main__":
   i = 0
   badrequests = 0
 
-  while (True):
+  shuffleoffthismortalcoil = KillMe()
+
+  while not shuffleoffthismortalcoil.kill_now:
 
     requestok = True
     dataok = False
@@ -87,3 +99,9 @@ if __name__ == "__main__":
 
     #wait
     time.sleep(pollinterval)
+  
+  # death - ideally indicate not running by killing the lights
+  for px in range(0,4):
+    strip.setPixelColor(px, colormap["off"])
+  strip.show()
+  eprint("this parrot is no more")
