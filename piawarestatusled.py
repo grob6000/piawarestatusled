@@ -28,14 +28,14 @@ loginterval = 12
 
 if __name__ == "__main__":
 
-  strip = PixelStrip(4, pin, 800000, 10, False, bright, 0)
+  strip = PixelStrip(5, pin, 800000, 10, False, bright, 0)
   strip.begin()
 
   eprint("ws281x initialized", "pin:", pin, "bright:", bright, "pollinterval:", pollinterval)
   
   # test / init
   for c in colormap:
-    for px in range(0,4):
+    for px in range(0,5):
       strip.setPixelColor(px, colormap[c])
     strip.show()
     time.sleep(1)
@@ -69,6 +69,7 @@ if __name__ == "__main__":
       s_radio = str(status["radio"]["status"])
       s_piaware = str(status["piaware"]["status"])
       s_flightaware = str(status["adept"]["status"])
+      s_gps = str(status["gps"]["status"])
       s_mlat = str(status["mlat"]["status"])
       #eprint("received status: ", s_radio, s_piaware, s_flightaware, s_mlat)
       # set leds
@@ -78,13 +79,15 @@ if __name__ == "__main__":
         strip.setPixelColor(1, colormap[s_piaware])
       if (s_flightaware in colormap):
         strip.setPixelColor(2, colormap[s_flightaware])
+      if (s_gps in colormap):
+        strip.setPixelColor(3, colormap[s_gps])
       if (s_mlat in colormap):
-        strip.setPixelColor(3, colormap[s_mlat])
+        strip.setPixelColor(4, colormap[s_mlat])
       strip.show()
     else:
       # rolling red chaser for bad connection
-      for px in range(0,4):
-        if i%4==px:
+      for px in range(0,5):
+        if i%5==px:
           strip.setPixelColor(px, colormap["red"])      
         else:
           strip.setPixelColor(px, colormap["off"]) 
@@ -101,7 +104,7 @@ if __name__ == "__main__":
     time.sleep(pollinterval)
   
   # death - ideally indicate not running by killing the lights
-  for px in range(0,4):
+  for px in range(0,5):
     strip.setPixelColor(px, colormap["off"])
   strip.show()
   eprint("this parrot is no more")
