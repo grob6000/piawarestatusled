@@ -1,6 +1,7 @@
 import requests
 import time
-from rpi_ws281x import PixelStrip, Color
+#from rpi_ws281x import PixelStrip, Color
+from pi5neo import Pi5Neo
 import sys
 import signal
 
@@ -20,24 +21,29 @@ def eprint(*args, **kwargs):
 # consts
 url = "http://127.0.0.1/status.json"
 
-colormap = { "green":Color(0,255,0), "amber":Color(164,104,0), "red":Color(255,0,0), "blue":Color(0,0,255), "off":Color(0,0,0) }
-pin = 18
-bright = 64
+#colormap = { "green":Color(0,255,0), "amber":Color(164,104,0), "red":Color(255,0,0), "blue":Color(0,0,255), "off":Color(0,0,0) }
+colormap = { "green":     (0,255,0), "amber":     (164,104,0), "red":     (255,0,0), "blue":(0,0,255), "off":(0,0,0) }
+
+pin = 10
+bright = 255
 pollinterval = 5
 loginterval = 12
 
 if __name__ == "__main__":
 
-  strip = PixelStrip(5, pin, 800000, 10, False, bright, 0)
-  strip.begin()
+  #strip = PixelStrip(4, pin, 800000, 10, False, bright, 0)
+  #strip.begin()
+  neo = Pi5Neo('/dev/spidev0.0', 5, 800)
 
   eprint("ws281x initialized", "pin:", pin, "bright:", bright, "pollinterval:", pollinterval)
   
   # test / init
-  for c in colormap:
-    for px in range(0,5):
-      strip.setPixelColor(px, colormap[c])
-    strip.show()
+  for c in colormap.values():
+    neo.fill_strip(c[0], c[1], c[2])
+    #for px in range(0,4):
+      #strip.setPixelColor(px, colormap[c])
+    #strip.show()
+    neo.update_strip()
     time.sleep(1)
   
   i = 0
@@ -71,28 +77,27 @@ if __name__ == "__main__":
       s_flightaware = str(status["adept"]["status"])
       s_gps = str(status["gps"]["status"])
       s_mlat = str(status["mlat"]["status"])
-      #eprint("received status: ", s_radio, s_piaware, s_flightaware, s_mlat)
+      s = (s_radio, s_piaware, s_flightaware, s_gps, s_mlat)
       # set leds
-      if (s_radio in colormap):
-        strip.setPixelColor(0, colormap[s_radio])
-      if (s_piaware in colormap):
-        strip.setPixelColor(1, colormap[s_piaware])
-      if (s_flightaware in colormap):
-        strip.setPixelColor(2, colormap[s_flightaware])
-      if (s_gps in colormap):
-        strip.setPixelColor(3, colormap[s_gps])
-      if (s_mlat in colormap):
-        strip.setPixelColor(4, colormap[s_mlat])
-      strip.show()
+      for px in range(0,5):
+        if (s[px] in colormap):
+          #strip.setPixelColor(i, colormap[s_radio])
+          c = colormap[s[px]]
+          neo.set_led_color(px, c[0], c[1], c[2])
+      #strip.show()
+      neo.update_strip()
     else:
       # rolling red chaser for bad connection
       for px in range(0,5):
-        if i%5==px:
-          strip.setPixelColor(px, colormap["red"])      
+        if i%4==px:
+          #strip.setPixelColor(px, colormap["red"])
+          neo.set_led_color(px, 255, 0, 0)
         else:
-          strip.setPixelColor(px, colormap["off"]) 
-      strip.show()
-    
+          #strip.setPixelColor(px, colormap["off"]) 
+          neo.set_led_color(px, 0, 0, 0)
+      #strip.show()
+      neo.update_strip()
+
     i = i+1
     if not requestok:
       badrequests = badrequests+1
@@ -102,9 +107,10 @@ if __name__ == "__main__":
 
     #wait
     time.sleep(pollinterval)
-  
+
   # death - ideally indicate not running by killing the lights
-  for px in range(0,5):
-    strip.setPixelColor(px, colormap["off"])
-  strip.show()
+  #for px in range(0,4):
+  #  strip.setPixelColor(px, colormap["off"])
+  #strip.show()
+  neo.fill_strip(0, 0, 0)
   eprint("this parrot is no more")

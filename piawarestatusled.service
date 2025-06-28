@@ -6,7 +6,7 @@ After=multi-user.target
 Type=idle
 Restart=always
 WorkingDirectory=/home/pi/piawarestatusled
-ExecStart=/usr/bin/python /home/pi/piawarestatusled/piawarestatusled.py
+ExecStart=/home/pi/piawarestatusled/venv/bin/python3 /home/pi/piawarestatusled/piawarestatusled.py
 StandardError=journal
 
 [Install]
