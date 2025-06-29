@@ -1,9 +1,11 @@
 import requests
 import time
-#from rpi_ws281x import PixelStrip, Color
+from rpi_ws281x import PixelStrip, Color
 from pi5neo import Pi5Neo
 import sys
 import signal
+from configparser import ConfigParser
+
 
 class KillMe:
   kill_now = False
@@ -18,48 +20,109 @@ class KillMe:
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
-# consts
+# color map (R,G,B)
+colormap   = { "green":(0,255,0), "amber":(164,104,0), "red":(255,0,0), "blue":(0,0,255), "off":(0,0,0) }
+
+# default config
 url = "http://127.0.0.1/status.json"
-
-#colormap = { "green":Color(0,255,0), "amber":Color(164,104,0), "red":Color(255,0,0), "blue":Color(0,0,255), "off":Color(0,0,0) }
-colormap = { "green":     (0,255,0), "amber":     (164,104,0), "red":     (255,0,0), "blue":(0,0,255), "off":(0,0,0) }
-
 pin = 10
 bright = 255
-pollinterval = 5
-loginterval = 12
+pollinterval = 10 # seconds, approx
+loginterval = 600 # seconds, approx - try to be divisible by pollinterval
+frequency = 800 # khz
+indicators = {"radio":0, "piaware":1, "adept":2, "gps":3, "mlat":4}
+
+# globals
+neo = None
+strip = None
+stripsize = 0
+
+def detect_model() -> str:
+    with open('/proc/device-tree/model') as f:
+        model = f.read()
+        eprint("Detected model:", model)
+    return model
+
+def do_set_led(ledindex, colortuple):
+  global neo, strip, brightness
+  if neo:
+    neo.set_led_color(ledindex, int(colortuple[0]*brightness/255), int(colortuple[1]*brightness/255), int(colortuple[2]*brightness/255))
+    #eprint("set led:", ledindex, int(colortuple[0]*brightness/255), int(colortuple[1]*brightness/255), int(colortuple[2]*brightness/255))
+  if strip:
+    strip.setPixelColorRGB(ledindex, colortuple[0], colortuple[1], colortuple[2])
+
+def do_set_strip(colortuple):
+  global neo, strip, brightness, stripsize
+  if neo:
+    neo.fill_strip(int(colortuple[0]*brightness/255), int(colortuple[1]*brightness/255), int(colortuple[2]*brightness/255))
+  if strip:
+    for ledindex in range(0, stripsize):
+      strip.setPixelColorRGB(ledindex, colortuple[0], colortuple[1], colortuple[2])  
+
+def do_update_strip():
+  global neo, strip
+  if neo:
+    neo.update_strip()
+  if strip:
+    strip.show()
 
 if __name__ == "__main__":
-
-  #strip = PixelStrip(4, pin, 800000, 10, False, bright, 0)
-  #strip.begin()
-  neo = Pi5Neo('/dev/spidev0.0', 5, 800)
-
-  eprint("ws281x initialized", "pin:", pin, "bright:", bright, "pollinterval:", pollinterval)
   
-  # test / init
+  # load config
+  config = ConfigParser()
+  config.read("./piawarestatusled.ini")
+  if "source" in config:
+    if "url" in config["source"]:
+      url = config["source"]["url"]
+  if "strip" in config:
+    if "frequency" in config["strip"]:
+      frequency = int(config["strip"]["frequency"])
+    if "pollinterval" in config["strip"]:
+      pollinterval = int(config["strip"]["pollinterval"])
+    if "brightness" in config["strip"]:
+      brightness = int(config["strip"]["brightness"])
+    if "pin" in config["strip"]:
+      pin = int(config["strip"]["pin"])
+  if "indicators" in config:
+    indicators = {}
+    for v in config["indicators"]:
+      indicators[v] = int(config["indicators"][v])
+
+  # automatically select required strip size 
+  stripsize = 1
+  for k, v in indicators.items():
+    if v+1 > stripsize:
+      stripsize = v+1
+
+  strip = None
+  neo = None
+
+  if "Raspberry Pi 5" in detect_model():
+    neo = Pi5Neo('/dev/spidev0.0', stripsize, 800)
+    eprint("pi5neo initialized", "pin:", "10 (SPI MOSI)", "bright", brightness, "size:", stripsize)
+  else:
+    strip = PixelStrip(stripsize, pin, frequency*1000, 10, False, bright, 0)
+    strip.begin()
+    eprint("ws281x initialized", "pin:", pin, "bright:", bright, "size:", stripsize)
+  
+  # test pattern on start
   for c in colormap.values():
-    neo.fill_strip(c[0], c[1], c[2])
-    #for px in range(0,4):
-      #strip.setPixelColor(px, colormap[c])
-    #strip.show()
-    neo.update_strip()
+    do_set_strip(c)
+    do_update_strip()
     time.sleep(1)
   
+  # process values
   i = 0
   badrequests = 0
-
   shuffleoffthismortalcoil = KillMe()
+  datalog = {}
 
   while not shuffleoffthismortalcoil.kill_now:
 
+    # get data
     requestok = True
-    dataok = False
-    s_radio = "off"
-    s_piaware = "off"
-    s_flightaware = "off"
-    s_mlat = "off"
-
+    displaychanged = False
+    
     try:
       response = requests.get(url)
       status = response.json()
@@ -67,50 +130,40 @@ if __name__ == "__main__":
       requestok = False
     
     if requestok:
-      # get data from request
-      dataok = ("radio" in status and "piaware" in status and "adept" in status and "mlat" in status)
+      # parse json for configured indicators
+      for indicatorname, ledindex in indicators.items():
+        do_set_led(ledindex, colormap["off"]) # default is off
+        if k in status:
+          if "status" in status[indicatorname]:
+            colorname = status[indicatorname]["status"]
+            if colorname in colormap:
+              do_set_led(ledindex, colormap[colorname])
+              if not (indicatorname in datalog and datalog[indicatorname] == colorname):
+                displaychanged = True
+              datalog[indicatorname] = colorname
 
-    if requestok and dataok:
-      # parse json
-      s_radio = str(status["radio"]["status"])
-      s_piaware = str(status["piaware"]["status"])
-      s_flightaware = str(status["adept"]["status"])
-      s_gps = str(status["gps"]["status"])
-      s_mlat = str(status["mlat"]["status"])
-      s = (s_radio, s_piaware, s_flightaware, s_gps, s_mlat)
-      # set leds
-      for px in range(0,5):
-        if (s[px] in colormap):
-          #strip.setPixelColor(i, colormap[s_radio])
-          c = colormap[s[px]]
-          neo.set_led_color(px, c[0], c[1], c[2])
-      #strip.show()
-      neo.update_strip()
+      do_update_strip()
     else:
       # rolling red chaser for bad connection
-      for px in range(0,5):
-        if i%4==px:
-          #strip.setPixelColor(px, colormap["red"])
-          neo.set_led_color(px, 255, 0, 0)
-        else:
-          #strip.setPixelColor(px, colormap["off"]) 
-          neo.set_led_color(px, 0, 0, 0)
-      #strip.show()
-      neo.update_strip()
+      do_set_strip(colormap["off"])
+      do_set_led(i%stripsize, colormap["red"])
+      do_update_strip()
 
     i = i+1
     if not requestok:
       badrequests = badrequests+1
 
-    if i % loginterval == 0:
-      eprint("requests:", i, "bad:", badrequests, "radio:", s_radio, "piaware:", s_piaware, "flightaware:", s_flightaware, "mlat:", s_mlat)
+    # logging
+    if displaychanged or (loginterval > 0 and i%(int(loginterval/pollinterval)) == 0): 
+      logstring = "requests={0} bad={1}".format(i, badrequests)
+      for iname, cname in datalog.items():
+        logstring = logstring + " {0}={1}".format(iname, cname)
+      eprint(logstring)
 
-    #wait
+    # wait
     time.sleep(pollinterval)
 
   # death - ideally indicate not running by killing the lights
-  #for px in range(0,4):
-  #  strip.setPixelColor(px, colormap["off"])
-  #strip.show()
-  neo.fill_strip(0, 0, 0)
+  do_set_strip(colormap["off"])
+  do_update_strip()
   eprint("this parrot is no more")
